@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import Image from 'next/image';
 import { calculateCost, VALID_DURATIONS, type ModelType, type Duration } from '@/lib/pricing';
 
 export default function Home() {
@@ -95,7 +96,7 @@ export default function Home() {
     if (apiKey && apiKey.startsWith('sk-')) {
       fetchPastVideos();
     }
-  }, [apiKey]);
+  }, [apiKey, fetchPastVideos]);
   
   // Auto-save API key on change
   useEffect(() => {
@@ -230,7 +231,7 @@ export default function Home() {
     }
   }
   
-  async function fetchPastVideos() {
+  const fetchPastVideos = useCallback(async () => {
     setLoadingPastVideos(true);
     try {
       const res = await fetch('/api/videos', {
@@ -275,7 +276,7 @@ export default function Home() {
     } finally {
       setLoadingPastVideos(false);
     }
-  }
+  }, [apiKey]);
   
   async function loadPastVideo(video: typeof pastVideos[0]) {
     setVideoStatus({ id: video.id, status: video.status });
@@ -461,10 +462,13 @@ export default function Home() {
                     {/* Video Thumbnail */}
                     <div className="aspect-video bg-zinc-950 relative overflow-hidden border-b border-zinc-800 group-hover:border-zinc-700">
                       {video.thumbnailUrl ? (
-                        <img 
+                        <Image 
                           src={video.thumbnailUrl} 
                           alt={video.prompt || 'Video thumbnail'}
-                          className="w-full h-full object-cover"
+                          fill
+                          sizes="(max-width: 768px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 25vw, 16vw"
+                          className="object-cover"
+                          unoptimized
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
