@@ -73,6 +73,54 @@ export default function Home() {
     return null;
   });
   
+  // Fetch past videos from OpenAI API
+  const fetchPastVideos = useCallback(async () => {
+    setLoadingPastVideos(true);
+    try {
+      const res = await fetch('/api/videos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey, limit: 50 }),
+      });
+      
+      if (!res.ok) {
+        throw new Error('Failed to fetch videos');
+      }
+      
+      const data = await res.json();
+      // Filter only completed videos
+      const completedVideos = data.data?.filter((v: { status: string }) => v.status === 'completed') || [];
+      
+      // Fetch thumbnails for each video
+      const videosWithThumbnails = await Promise.all(
+        completedVideos.map(async (video: typeof pastVideos[0]) => {
+          try {
+            const thumbRes = await fetch(`/api/download/${video.id}?variant=thumbnail`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ apiKey }),
+            });
+            
+            if (thumbRes.ok) {
+              const blob = await thumbRes.blob();
+              const thumbnailUrl = URL.createObjectURL(blob);
+              return { ...video, thumbnailUrl };
+            }
+          } catch (error) {
+            console.error(`Failed to fetch thumbnail for ${video.id}:`, error);
+          }
+          return video;
+        })
+      );
+      
+      setPastVideos(videosWithThumbnails);
+    } catch (error) {
+      console.error('Error fetching past videos:', error);
+    } finally {
+      setLoadingPastVideos(false);
+    }
+  }, [apiKey]);
+  
   // Load API key and spending data from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('openai_api_key');
@@ -230,53 +278,6 @@ export default function Home() {
       setDownloading(false);
     }
   }
-  
-  const fetchPastVideos = useCallback(async () => {
-    setLoadingPastVideos(true);
-    try {
-      const res = await fetch('/api/videos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey, limit: 50 }),
-      });
-      
-      if (!res.ok) {
-        throw new Error('Failed to fetch videos');
-      }
-      
-      const data = await res.json();
-      // Filter only completed videos
-      const completedVideos = data.data?.filter((v: { status: string }) => v.status === 'completed') || [];
-      
-      // Fetch thumbnails for each video
-      const videosWithThumbnails = await Promise.all(
-        completedVideos.map(async (video: typeof pastVideos[0]) => {
-          try {
-            const thumbRes = await fetch(`/api/download/${video.id}?variant=thumbnail`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ apiKey }),
-            });
-            
-            if (thumbRes.ok) {
-              const blob = await thumbRes.blob();
-              const thumbnailUrl = URL.createObjectURL(blob);
-              return { ...video, thumbnailUrl };
-            }
-          } catch (error) {
-            console.error(`Failed to fetch thumbnail for ${video.id}:`, error);
-          }
-          return video;
-        })
-      );
-      
-      setPastVideos(videosWithThumbnails);
-    } catch (error) {
-      console.error('Error fetching past videos:', error);
-    } finally {
-      setLoadingPastVideos(false);
-    }
-  }, [apiKey]);
   
   async function loadPastVideo(video: typeof pastVideos[0]) {
     setVideoStatus({ id: video.id, status: video.status });
