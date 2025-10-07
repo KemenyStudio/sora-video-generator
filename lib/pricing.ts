@@ -1,37 +1,22 @@
 /**
  * Pricing configuration for Sora video generation
- * Prices are 2x the OpenAI API costs
+ * Prices are per second (direct OpenAI API costs)
  */
 
 export const API_COSTS = {
   'sora-2': {
-    '720p': 0.10, // per minute (API cost)
+    '720p': 0.10, // per second (API cost)
     '1080p': 0.10,
   },
   'sora-2-pro': {
-    '720p': 0.30, // per minute (API cost)
+    '720p': 0.30, // per second (API cost)
     '1080p': 0.50,
     '1792p': 0.50,
   },
 } as const;
 
-export const MARKUP_MULTIPLIER = 2; // 2x markup
-
-// Calculate our prices (2x API cost)
-export const OUR_PRICES = {
-  'sora-2': {
-    '720p': API_COSTS['sora-2']['720p'] * MARKUP_MULTIPLIER,
-    '1080p': API_COSTS['sora-2']['1080p'] * MARKUP_MULTIPLIER,
-  },
-  'sora-2-pro': {
-    '720p': API_COSTS['sora-2-pro']['720p'] * MARKUP_MULTIPLIER,
-    '1080p': API_COSTS['sora-2-pro']['1080p'] * MARKUP_MULTIPLIER,
-    '1792p': API_COSTS['sora-2-pro']['1792p'] * MARKUP_MULTIPLIER,
-  },
-} as const;
-
-export type ModelType = keyof typeof OUR_PRICES;
-export type ResolutionType<M extends ModelType> = keyof typeof OUR_PRICES[M];
+export type ModelType = keyof typeof API_COSTS;
+export type ResolutionType<M extends ModelType> = keyof typeof API_COSTS[M];
 
 // Resolution options with display names
 export const RESOLUTIONS = {
@@ -52,10 +37,9 @@ export function calculateCost(
   resolution: string,
   seconds: Duration
 ): number {
-  const resKey = resolution as keyof typeof OUR_PRICES[typeof model];
-  const pricePerMinute = OUR_PRICES[model][resKey] || 0;
-  const minutes = seconds / 60;
-  return Number((pricePerMinute * minutes).toFixed(4));
+  const resKey = resolution as keyof typeof API_COSTS[typeof model];
+  const pricePerSecond = API_COSTS[model][resKey] || 0;
+  return Number((pricePerSecond * seconds).toFixed(4));
 }
 
 /**
@@ -101,8 +85,8 @@ export const CREDIT_PACKAGES = [
  */
 export function getPricingDisplay() {
   return {
-    'sora-2 (720p)': `$${OUR_PRICES['sora-2']['720p'].toFixed(2)} per second`,
-    'sora-2-pro (720p)': `$${OUR_PRICES['sora-2-pro']['720p'].toFixed(2)} per second`,
-    'sora-2-pro (1080p+)': `$${OUR_PRICES['sora-2-pro']['1080p'].toFixed(2)} per second`,
+    'sora-2 (720p)': `$${API_COSTS['sora-2']['720p'].toFixed(2)} per second`,
+    'sora-2-pro (720p)': `$${API_COSTS['sora-2-pro']['720p'].toFixed(2)} per second`,
+    'sora-2-pro (1080p+)': `$${API_COSTS['sora-2-pro']['1080p'].toFixed(2)} per second`,
   };
 }

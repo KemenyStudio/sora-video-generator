@@ -191,7 +191,7 @@ export default function Home() {
       setVideoStatus({ id: data.videoId, status: data.status });
       
       // Track cost
-      const actualCost = estimatedCost / 2; // Actual OpenAI cost
+      const actualCost = estimatedCost; // Direct OpenAI API cost
       const newTotal = totalSpent + actualCost;
       setTotalSpent(newTotal);
       localStorage.setItem('total_spent', newTotal.toString());
@@ -667,7 +667,7 @@ export default function Home() {
                 <div className="bg-zinc-950 border border-zinc-800 rounded-md p-4">
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-zinc-400">Estimated cost:</span>
-                    <span className="font-mono font-semibold text-zinc-100">${(estimatedCost / 2).toFixed(4)}</span>
+                    <span className="font-mono font-semibold text-zinc-100">${estimatedCost.toFixed(4)}</span>
                   </div>
                 </div>
                 
@@ -758,15 +758,15 @@ export default function Home() {
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between items-center">
                   <span className="text-zinc-400">Sora 2 (720p)</span>
-                  <span className="font-mono text-zinc-100">$0.10/min</span>
+                  <span className="font-mono text-zinc-100">$0.10/sec</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-zinc-400">Sora 2 Pro (720p)</span>
-                  <span className="font-mono text-zinc-100">$0.30/min</span>
+                  <span className="font-mono text-zinc-100">$0.30/sec</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-zinc-400">Sora 2 Pro (1080p+)</span>
-                  <span className="font-mono text-zinc-100">$0.50/min</span>
+                  <span className="font-mono text-zinc-100">$0.50/sec</span>
                 </div>
                 <div className="pt-3 mt-3 border-t border-zinc-800 text-xs text-zinc-500">
                   Charged to your OpenAI account

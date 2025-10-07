@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- **CRITICAL: Fixed pricing structure** - Prices are per second ($0.10, $0.30, $0.50), not per minute as previously displayed
+- Updated cost calculation to multiply seconds directly instead of converting to minutes
+- Fixed displayed pricing units from "/min" to "/sec" throughout the UI
+- Removed unnecessary markup multiplier since this is a direct API passthrough
+- Removed erroneous division by 2 in cost tracking and display
 - Removed `--turbopack` flag from production build script (was causing 404 on Vercel)
 - Removed `vercel.json` to allow Vercel auto-detection of Next.js configuration
 
