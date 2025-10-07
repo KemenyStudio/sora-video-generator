@@ -128,14 +128,32 @@ export default function Home() {
       });
       
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        console.error('Failed to fetch videos:', errorData);
+        let errorMessage = `Failed to fetch videos (${res.status})`;
+        try {
+          const errorData = await res.json();
+          errorMessage = errorData.error || errorMessage;
+          console.error('Failed to fetch videos:', errorData);
+        } catch (parseError) {
+          // API returned non-JSON (probably HTML error page)
+          const text = await res.text().catch(() => 'Unknown error');
+          console.error('Failed to fetch videos (non-JSON response):', {
+            status: res.status,
+            response: text.substring(0, 200)
+          });
+        }
         // Silently fail - don't show error to user for optional feature
         setLoadingPastVideos(false);
         return;
       }
       
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch (parseError) {
+        console.error('Failed to parse videos response:', parseError);
+        setLoadingPastVideos(false);
+        return;
+      }
       
       // Log all videos for debugging
       console.log('All videos from API:', data.data?.length || 0);
