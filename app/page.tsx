@@ -728,7 +728,7 @@ export default function Home() {
           
           // Extract detailed error info if available
           let errorMessage = 'Video generation failed';
-          if (data.error) {
+          if (data.error && (data.error.message || data.error.code || data.error.type)) {
             // OpenAI API returns error object with code and message
             const errorDetails = [];
             if (data.error.code) errorDetails.push(`Code: ${data.error.code}`);
@@ -741,6 +741,7 @@ export default function Home() {
             } else if (errorDetails.length > 0) {
               errorMessage = `Video generation failed - ${errorDetails.join(', ')}`;
             }
+            // Only log if there's actual error content
             console.error('Video generation error details:', {
               videoId,
               error: data.error,
