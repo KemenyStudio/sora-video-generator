@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Removed `--turbopack` flag from production build script (was causing 404 on Vercel)
+- Removed `vercel.json` to allow Vercel auto-detection of Next.js configuration
+
 ### Added
 - **Past Generations Grid**: Fetch and display all completed videos from OpenAI API in a responsive grid layout
 - New API endpoint `/api/videos` to list videos from OpenAI with pagination support
