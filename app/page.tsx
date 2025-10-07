@@ -62,7 +62,16 @@ export default function Home() {
     }
   }, [orientation]);
   const [generating, setGenerating] = useState(false);
-  const [videoStatus, setVideoStatus] = useState<{ id: string; status: string; progress?: number } | null>(null);
+  const [videoStatus, setVideoStatus] = useState<{ 
+    id: string; 
+    status: string; 
+    progress?: number;
+    error?: {
+      code?: string;
+      message?: string;
+      type?: string;
+    };
+  } | null>(null);
   const [error, setError] = useState('');
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -699,13 +708,35 @@ export default function Home() {
           setGenerating(false);
           setStartTime(null);
           
+          // Extract detailed error info if available
+          let errorMessage = 'Video generation failed';
+          if (data.error) {
+            // OpenAI API returns error object with code and message
+            const errorDetails = [];
+            if (data.error.code) errorDetails.push(`Code: ${data.error.code}`);
+            if (data.error.type) errorDetails.push(`Type: ${data.error.type}`);
+            if (data.error.message) {
+              errorMessage = data.error.message;
+              if (errorDetails.length > 0) {
+                errorMessage += ` (${errorDetails.join(', ')})`;
+              }
+            } else if (errorDetails.length > 0) {
+              errorMessage = `Video generation failed - ${errorDetails.join(', ')}`;
+            }
+            console.error('Video generation error details:', {
+              videoId,
+              error: data.error,
+              status: data.status,
+            });
+          }
+          
           // Update queue item if it exists
           if (queueItemId) {
             setQueue(prev => prev.map(q => q.id === queueItemId ? {
               ...q,
               status: data.status === 'completed' ? 'completed' as const : 'failed' as const,
               completedAt: Date.now(),
-              error: data.status === 'failed' ? 'Video generation failed' : undefined,
+              error: data.status === 'failed' ? errorMessage : undefined,
             } : q));
           }
           
@@ -720,7 +751,7 @@ export default function Home() {
               downloadVideo(videoId);
             }
           } else {
-            setError('Video generation failed');
+            setError(errorMessage);
           }
         }
       } catch {
@@ -1564,6 +1595,31 @@ export default function Home() {
                         />
                       </div>
                       <div className="text-center text-xs text-zinc-400 mt-1">{videoStatus.progress}%</div>
+                    </div>
+                  )}
+                  
+                  {videoStatus.status === 'failed' && videoStatus.error && (
+                    <div>
+                      <div className="text-xs text-zinc-500 mb-2">Error Details</div>
+                      <div className="bg-red-950 border border-red-900 rounded-md p-3">
+                        <p className="text-xs text-red-200 mb-2">
+                          {videoStatus.error.message || 'Video generation failed'}
+                        </p>
+                        {(videoStatus.error.code || videoStatus.error.type) && (
+                          <div className="flex gap-2 text-[10px] text-red-400">
+                            {videoStatus.error.code && (
+                              <span className="bg-red-900/50 px-2 py-0.5 rounded">
+                                Code: {videoStatus.error.code}
+                              </span>
+                            )}
+                            {videoStatus.error.type && (
+                              <span className="bg-red-900/50 px-2 py-0.5 rounded">
+                                Type: {videoStatus.error.type}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                   

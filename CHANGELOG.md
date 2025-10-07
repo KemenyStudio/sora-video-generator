@@ -5,6 +5,9 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Enhanced Error Reporting**: Display detailed error messages from OpenAI API including error codes, types, and specific failure reasons
+- Error details panel in Video Status section shows error code and type
+- Comprehensive console logging for debugging video generation failures
 - **Video Deletion**: Delete videos directly from past generations grid with confirmation dialog
 - Delete button on each past video thumbnail (🗑️ Delete)
 - DELETE API endpoint for removing videos from OpenAI account

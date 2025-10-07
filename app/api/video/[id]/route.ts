@@ -19,10 +19,23 @@ export async function POST(
     // Get video status
     const video = await openai.videos.retrieve(id);
     
+    // Extract error details if present
+    const videoWithError = video as { 
+      id: string; 
+      status: string; 
+      progress?: number;
+      error?: { 
+        code?: string; 
+        message?: string;
+        type?: string;
+      };
+    };
+    
     return NextResponse.json({
-      id: video.id,
-      status: video.status,
-      progress: (video as { progress?: number }).progress || 0,
+      id: videoWithError.id,
+      status: videoWithError.status,
+      progress: videoWithError.progress || 0,
+      error: videoWithError.error || undefined,
     });
   } catch (error) {
     console.error('Video status error:', error);
