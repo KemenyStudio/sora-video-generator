@@ -12,12 +12,16 @@ A beautiful, simple web interface for generating AI videos with OpenAI's Sora AP
 ## ✨ Features
 
 - 🎥 **Video Generation** - Sora 2 (fast) and Sora 2 Pro (quality) models
+- 📋 **Queue System** - Batch multiple jobs, process automatically one at a time
+- 🖼️ **Reference Input** - Upload images to guide generation as first frame
+- 🎬 **Frame Extraction** - Extract last frame from videos for perfect continuity
 - 📺 **All Sora Resolutions** - 6 dimensions (horizontal & vertical)
 - ⏱️ **Progress Tracking** - Real-time countdown and visual progress bar
 - 💰 **Spending Counter** - Track your API costs automatically
 - 🎬 **Integrated Player** - Watch generated videos in-browser with controls
 - 📥 **Easy Download** - Save videos as MP4 with one click
-- 📜 **Video History** - See your last 5 generations with costs
+- 📜 **Video History** - See your past generations with thumbnails
+- 🗑️ **Delete Videos** - Remove videos from your OpenAI account with one click
 - 🔒 **Privacy First** - API keys stored locally, never on servers
 - 🎨 **Clean UI** - Shadcn-inspired black & white design
 - ⚖️ **Legal Protection** - Comprehensive terms and disclaimers
@@ -40,12 +44,13 @@ Open [http://localhost:3000](http://localhost:3000)
 1. **Get API Key** → https://platform.openai.com/api-keys
 2. **Enter API Key** → Paste in the app (stored locally)
 3. **Write Prompt** → "A sunset over the ocean, cinematic wide shot"
-4. **Choose Orientation** → Horizontal (16:9) or Vertical (9:16)
-5. **Select Resolution** → 720p, 1080p, or Cinematic
-6. **Pick Model & Duration** → Sora 2 (fast) or Pro (quality)
-7. **Generate** → See cost estimate, click button
-8. **Watch Progress** → Countdown timer shows time remaining
-9. **View Video** → Auto-plays when complete, download as MP4
+4. **Upload Reference (Optional)** → Add image or video to guide the style
+5. **Choose Orientation** → Horizontal (16:9) or Vertical (9:16)
+6. **Select Resolution** → 720p, 1080p, or Cinematic
+7. **Pick Model & Duration** → Sora 2 (fast) or Pro (quality)
+8. **Generate** → See cost estimate, click button
+9. **Watch Progress** → Countdown timer shows time remaining
+10. **View Video** → Auto-plays when complete, download as MP4
 
 ---
 
@@ -62,6 +67,113 @@ Open [http://localhost:3000](http://localhost:3000)
 - **Cinematic**: 1024x1792 - Vertical cinematic
 
 **All 6 resolutions supported!**
+
+---
+
+## 📋 Queue System - Batch Video Generation
+
+Generate multiple videos without waiting! The queue processes jobs automatically one at a time.
+
+### How to Use
+
+1. **Add Jobs to Queue**:
+   - Fill out your prompt, settings, and optional reference
+   - Click **"Add to Queue"** (form clears for next job)
+   - Repeat to add multiple jobs
+
+2. **Automatic Processing**:
+   - Queue starts processing automatically
+   - Jobs process one at a time (prevents API rate limits)
+   - Watch progress in real-time
+
+3. **Manage Queue**:
+   - **Reorder**: Move jobs up/down with arrow buttons
+   - **Remove**: Delete unwanted jobs (X button)
+   - **Clear Completed**: Remove finished jobs to clean up
+
+### Queue Features
+
+- **Status Tracking**: See pending, processing, completed, failed states
+- **Persistent**: Queue survives page refresh (saved in localStorage)
+- **Visual Feedback**: Progress spinners, status badges, numbered items
+- **Cost Preview**: See estimated cost for each queued job
+- **Reference Support**: Each job can have its own reference image
+
+### Example Workflow
+
+```
+1. Add to Queue: "A sunrise over mountains"
+2. Add to Queue: "A sunset over the ocean"
+3. Add to Queue: "Stars in the night sky"
+→ All three process automatically, one after another!
+```
+
+### When to Use Queue vs Generate Now
+
+- **Use Queue**: When you have multiple videos to create
+- **Generate Now**: When you need just one video immediately
+
+---
+
+## 🖼️ Reference Image Support
+
+Upload reference images to use as the first frame of your video:
+
+### Supported Formats
+- **Images Only**: JPEG, PNG, WebP (max 10MB)
+- **Important**: Video references are not supported by OpenAI's Sora API
+
+### How It Works
+1. Upload a reference image (optional)
+2. The image becomes the **first frame** of your generated video
+3. Your prompt describes what happens after that first frame
+4. The AI maintains visual consistency from your reference
+
+### Use Cases
+- Start with a specific scene or composition
+- Maintain consistent character appearance
+- Use brand assets or specific environments
+- Control the exact starting point of your video
+- Ensure specific framing and composition
+
+### Important Notes
+- **Images are automatically resized** to match your selected resolution
+- The image sets the visual style, colors, and composition
+- Your prompt controls the action and camera movement
+- High-quality resizing maintains image quality
+
+---
+
+## 🎬 Video Continuity & Long-Form Content
+
+Create longer videos by extracting frames and chaining generations:
+
+### How It Works
+1. Generate your first video (e.g., "A person walking into a room")
+2. Click **"🖼️ Use Last Frame"** on the video thumbnail
+3. The last frame is extracted and loaded as an image reference
+4. Write what happens next (e.g., "The person sits down at the table")
+5. Generate - the new video starts where the last one ended
+
+### Frame Extraction
+- Automatically extracts the last frame (0.1s before end)
+- Converts to JPEG at original video resolution
+- Uses as reference image for next generation
+- Maintains perfect visual continuity
+
+### Continuity Prompting Tips
+- **Start with action**: "The person turns around and smiles"
+- **Don't use "continue"**: The frame already provides continuity
+- Maintain consistent time of day and lighting
+- Chain multiple videos to create 30s, 60s, or longer sequences
+
+### Example Workflow
+1. **Video 1 (8s)**: "A detective enters a dimly lit office, golden hour"
+2. **Extract last frame** → Use as reference
+3. **Video 2 (8s)**: "The detective walks to the desk and opens a drawer"
+4. **Extract last frame** → Use as reference
+5. **Video 3 (8s)**: "The detective pulls out an old photograph and examines it"
+6. **Result**: 24-second continuous narrative with perfect visual consistency!
 
 ---
 

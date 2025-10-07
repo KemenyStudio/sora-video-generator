@@ -30,3 +30,32 @@ export async function POST(
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const { apiKey } = await request.json();
+    
+    if (!apiKey) {
+      return NextResponse.json({ error: 'API key required' }, { status: 400 });
+    }
+    
+    // Create OpenAI client with user's API key
+    const openai = new OpenAI({ apiKey });
+    
+    // Delete video
+    const deletedVideo = await openai.videos.delete(id);
+    
+    return NextResponse.json({
+      id: deletedVideo.id,
+      deleted: true,
+    });
+  } catch (error) {
+    console.error('Video delete error:', error);
+    const message = error instanceof Error ? error.message : 'Failed to delete video';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

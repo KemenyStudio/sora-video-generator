@@ -4,6 +4,23 @@ import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { calculateCost, VALID_DURATIONS, type ModelType, type Duration } from '@/lib/pricing';
 
+// Queue item type
+interface QueueItem {
+  id: string;
+  prompt: string;
+  model: ModelType;
+  size: string;
+  duration: Duration;
+  referenceFile: File | null;
+  referenceVideoId: string | null;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  videoId?: string;
+  error?: string;
+  addedAt: number;
+  completedAt?: number;
+  cost: number;
+}
+
 export default function Home() {
   // API Key
   const [apiKey, setApiKey] = useState('');
@@ -14,6 +31,13 @@ export default function Home() {
   const [orientation, setOrientation] = useState<'horizontal' | 'vertical'>('horizontal');
   const [size, setSize] = useState('1280x720');
   const [duration, setDuration] = useState<Duration>(8);
+  
+  // Reference file upload
+  const [referenceFile, setReferenceFile] = useState<File | null>(null);
+  const [referencePreview, setReferencePreview] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [referenceVideoId, setReferenceVideoId] = useState<string | null>(null);
+  const [loadingReference, setLoadingReference] = useState(false);
   
   // Available resolutions by orientation
   const resolutions = {
@@ -44,6 +68,11 @@ export default function Home() {
   const [downloading, setDownloading] = useState(false);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [estimatedDuration, setEstimatedDuration] = useState<number>(120); // Default 2 minutes
+  
+  // Queue management
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [isProcessingQueue, setIsProcessingQueue] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
   const [totalSpent, setTotalSpent] = useState<number>(0);
   const [videoHistory, setVideoHistory] = useState<Array<{
     id: string;
@@ -75,6 +104,12 @@ export default function Home() {
   
   // Fetch past videos from OpenAI API
   const fetchPastVideos = useCallback(async () => {
+    // Don't fetch if no API key
+    if (!apiKey || !apiKey.startsWith('sk-')) {
+      setPastVideos([]); // Clear past videos if no API key
+      return;
+    }
+    
     setLoadingPastVideos(true);
     try {
       const res = await fetch('/api/videos', {
@@ -84,14 +119,28 @@ export default function Home() {
       });
       
       if (!res.ok) {
-        throw new Error('Failed to fetch videos');
+        const errorData = await res.json().catch(() => ({}));
+        console.error('Failed to fetch videos:', errorData);
+        // Silently fail - don't show error to user for optional feature
+        setLoadingPastVideos(false);
+        return;
       }
       
       const data = await res.json();
+      
+      // Log all videos for debugging
+      console.log('All videos from API:', data.data?.length || 0);
+      console.log('Videos:', data.data?.map((v: { id: string; status: string; prompt?: string }) => ({
+        id: v.id.substring(0, 20) + '...',
+        status: v.status,
+        prompt: v.prompt?.substring(0, 30)
+      })));
+      
       // Filter only completed videos
       const completedVideos = data.data?.filter((v: { status: string }) => v.status === 'completed') || [];
+      console.log('Completed videos:', completedVideos.length);
       
-      // Fetch thumbnails for each video
+      // Fetch thumbnails for each video (non-blocking)
       const videosWithThumbnails = await Promise.all(
         completedVideos.map(async (video: typeof pastVideos[0]) => {
           try {
@@ -103,19 +152,30 @@ export default function Home() {
             
             if (thumbRes.ok) {
               const blob = await thumbRes.blob();
-              const thumbnailUrl = URL.createObjectURL(blob);
-              return { ...video, thumbnailUrl };
+              if (blob && blob.size > 0) {
+                const thumbnailUrl = URL.createObjectURL(blob);
+                return { ...video, thumbnailUrl };
+              } else {
+                console.warn(`Empty thumbnail for ${video.id}`);
+              }
+            } else {
+              const errorData = await thumbRes.json().catch(() => ({}));
+              console.warn(`Thumbnail fetch failed for ${video.id}:`, thumbRes.status, errorData);
             }
           } catch (error) {
             console.error(`Failed to fetch thumbnail for ${video.id}:`, error);
           }
+          // Return video without thumbnail if fetch fails
           return video;
         })
       );
       
+      console.log('Videos with thumbnails:', videosWithThumbnails.length);
       setPastVideos(videosWithThumbnails);
     } catch (error) {
       console.error('Error fetching past videos:', error);
+      // Silently fail - past videos is an optional feature
+      setPastVideos([]); // Clear videos on error
     } finally {
       setLoadingPastVideos(false);
     }
@@ -137,6 +197,25 @@ export default function Home() {
     if (historyData) {
       setVideoHistory(JSON.parse(historyData));
     }
+    
+    // Load queue (but don't load File objects - those can't be serialized)
+    const queueData = localStorage.getItem('video_queue');
+    if (queueData) {
+      try {
+        const loadedQueue: QueueItem[] = JSON.parse(queueData);
+        // Filter out processing items (reset to pending) and remove reference files
+        const cleanedQueue = loadedQueue
+          .filter(item => item.status !== 'processing')
+          .map(item => ({
+            ...item,
+            referenceFile: null, // Can't persist File objects
+            status: item.status === 'processing' ? 'pending' as const : item.status,
+          }));
+        setQueue(cleanedQueue);
+      } catch (e) {
+        console.error('Failed to load queue:', e);
+      }
+    }
   }, []);
   
   // Fetch past videos from OpenAI when API key is available
@@ -153,6 +232,361 @@ export default function Home() {
     }
   }, [apiKey]);
   
+  // Auto-save queue on change
+  useEffect(() => {
+    if (queue.length > 0) {
+      // Save queue without File objects (they can't be serialized)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const serializableQueue = queue.map(({ referenceFile, ...item }) => item);
+      localStorage.setItem('video_queue', JSON.stringify(serializableQueue));
+    } else {
+      localStorage.removeItem('video_queue');
+    }
+  }, [queue]);
+  
+  // Handle reference file upload
+  const handleFileUpload = useCallback((file: File) => {
+    // Validate file type - ONLY IMAGES ARE SUPPORTED
+    const imageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    
+    if (!imageTypes.includes(file.type)) {
+      setError('Only image references are supported. Please upload JPEG, PNG, or WebP files.');
+      return;
+    }
+    
+    // Validate file size (10MB for images)
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      setError('File too large. Maximum size is 10MB for images.');
+      return;
+    }
+    
+    setError('');
+    setReferenceFile(file);
+    
+    // Create preview
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setReferencePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+  };
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+  }, [handleFileUpload]);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const clearReferenceFile = () => {
+    setReferenceFile(null);
+    setReferencePreview(null);
+    setReferenceVideoId(null);
+    setError('');
+  };
+
+  // Extract last frame from video as image reference
+  const useVideoFrameAsReference = useCallback(async (videoId: string) => {
+    setLoadingReference(true);
+    setError('');
+    
+    try {
+      // Download the video
+      const res = await fetch(`/api/download/${videoId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey }),
+      });
+      
+      if (!res.ok) {
+        throw new Error('Failed to load video');
+      }
+      
+      const blob = await res.blob();
+      const videoUrl = URL.createObjectURL(blob);
+      
+      // Create video element to extract frame
+      const video = document.createElement('video');
+      video.src = videoUrl;
+      video.crossOrigin = 'anonymous';
+      
+      await new Promise((resolve, reject) => {
+        video.onloadeddata = resolve;
+        video.onerror = reject;
+      });
+      
+      // Seek to last frame
+      video.currentTime = video.duration - 0.1;
+      
+      await new Promise((resolve) => {
+        video.onseeked = resolve;
+      });
+      
+      // Extract frame to canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Failed to get canvas context');
+      
+      ctx.drawImage(video, 0, 0);
+      
+      // Convert to blob
+      const imageBlob = await new Promise<Blob>((resolve) => {
+        canvas.toBlob((blob) => resolve(blob!), 'image/jpeg', 0.95);
+      });
+      
+      // Convert to File
+      const file = new File([imageBlob], `reference-frame-${videoId}.jpg`, { type: 'image/jpeg' });
+      
+      // Set as reference
+      setReferenceFile(file);
+      setReferenceVideoId(videoId);
+      
+      // Create preview URL
+      const previewUrl = URL.createObjectURL(imageBlob);
+      setReferencePreview(previewUrl);
+      
+      // Cleanup
+      URL.revokeObjectURL(videoUrl);
+      
+      // Scroll to form
+      document.querySelector('form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      
+    } catch (error) {
+      console.error('Error extracting video frame:', error);
+      setError('Failed to extract frame from video. Please try again.');
+    } finally {
+      setLoadingReference(false);
+    }
+  }, [apiKey]);
+
+  // Add item to queue
+  const addToQueue = useCallback(() => {
+    if (!prompt) {
+      setError('Please enter a prompt');
+      return;
+    }
+    
+    const queueItem: QueueItem = {
+      id: `queue-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      prompt,
+      model,
+      size,
+      duration,
+      referenceFile,
+      referenceVideoId,
+      status: 'pending',
+      addedAt: Date.now(),
+      cost: calculateCost(model, size === '1280x720' || size === '720x1280' ? '720p' : size === '1920x1080' || size === '1080x1920' ? '1080p' : '1792p', duration),
+    };
+    
+    setQueue(prev => [...prev, queueItem]);
+    setShowQueue(true); // Auto-show queue when adding items
+    
+    // Clear form
+    setPrompt('');
+    clearReferenceFile();
+    
+    // Start processing if not already
+    if (!isProcessingQueue) {
+      setIsProcessingQueue(true);
+    }
+  }, [prompt, model, size, duration, referenceFile, referenceVideoId, isProcessingQueue]);
+  
+  // Remove item from queue
+  const removeFromQueue = useCallback((id: string) => {
+    setQueue(prev => prev.filter(item => item.id !== id));
+  }, []);
+  
+  // Move item in queue
+  const moveQueueItem = useCallback((id: string, direction: 'up' | 'down') => {
+    setQueue(prev => {
+      const index = prev.findIndex(item => item.id === id);
+      if (index === -1) return prev;
+      
+      const newIndex = direction === 'up' ? index - 1 : index + 1;
+      if (newIndex < 0 || newIndex >= prev.length) return prev;
+      
+      const newQueue = [...prev];
+      [newQueue[index], newQueue[newIndex]] = [newQueue[newIndex], newQueue[index]];
+      return newQueue;
+    });
+  }, []);
+  
+  // Clear completed items from queue
+  const clearCompletedQueue = useCallback(() => {
+    setQueue(prev => prev.filter(item => item.status !== 'completed' && item.status !== 'failed'));
+  }, []);
+
+  // Resize image to match target resolution
+  const resizeImageToResolution = async (file: File, targetSize: string): Promise<File> => {
+    const [targetWidth, targetHeight] = targetSize.split('x').map(Number);
+    
+    return new Promise((resolve, reject) => {
+      const img = document.createElement('img');
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) {
+        reject(new Error('Failed to get canvas context'));
+        return;
+      }
+      
+      img.onload = () => {
+        // Set canvas to target dimensions
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        
+        // Draw image scaled to canvas
+        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+        
+        // Convert to blob
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            reject(new Error('Failed to create blob'));
+            return;
+          }
+          
+          const resizedFile = new File([blob], file.name, { type: 'image/jpeg' });
+          resolve(resizedFile);
+        }, 'image/jpeg', 0.95);
+      };
+      
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
+  // Process a single queue item
+  const processQueueItem = useCallback(async (item: QueueItem) => {
+    setGenerating(true);
+    setStartTime(Date.now());
+    
+    // Estimate duration based on model
+    const estimate = item.model === 'sora-2' ? 120 : 180;
+    setEstimatedDuration(estimate);
+    
+    // Update item status to processing
+    setQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'processing' as const } : q));
+    
+    try {
+      let res;
+      
+      // Use FormData if reference file is present
+      if (item.referenceFile) {
+        // Resize reference image
+        let finalReferenceFile = item.referenceFile;
+        try {
+          finalReferenceFile = await resizeImageToResolution(item.referenceFile, item.size);
+        } catch {
+          throw new Error('Failed to resize reference image');
+        }
+        
+        const formData = new FormData();
+        formData.append('prompt', item.prompt);
+        formData.append('model', item.model);
+        formData.append('size', item.size);
+        formData.append('seconds', item.duration.toString());
+        formData.append('apiKey', apiKey);
+        formData.append('referenceFile', finalReferenceFile);
+        
+        res = await fetch('/api/generate', {
+          method: 'POST',
+          body: formData,
+        });
+      } else {
+        res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            prompt: item.prompt,
+            model: item.model,
+            size: item.size,
+            seconds: item.duration,
+            apiKey 
+          }),
+        });
+      }
+      
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || 'Generation failed');
+      }
+      
+      // Update queue item with video ID
+      setQueue(prev => prev.map(q => q.id === item.id ? { ...q, videoId: data.videoId } : q));
+      setVideoStatus({ id: data.videoId, status: data.status });
+      
+      // Track cost
+      const newTotal = totalSpent + item.cost;
+      setTotalSpent(newTotal);
+      localStorage.setItem('total_spent', newTotal.toString());
+      
+      // Add to history
+      const newHistory = [
+        ...videoHistory,
+        {
+          id: data.videoId,
+          prompt: item.prompt.substring(0, 50) + (item.prompt.length > 50 ? '...' : ''),
+          cost: item.cost,
+          timestamp: new Date().toISOString(),
+        },
+      ];
+      setVideoHistory(newHistory);
+      localStorage.setItem('video_history', JSON.stringify(newHistory));
+      
+      // Poll for video status with queue item reference
+      await pollVideoStatus(data.videoId, item.id);
+      
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to generate video';
+      setQueue(prev => prev.map(q => q.id === item.id ? { 
+        ...q, 
+        status: 'failed' as const, 
+        error: message,
+        completedAt: Date.now(),
+      } : q));
+      setGenerating(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiKey, totalSpent, videoHistory, resizeImageToResolution]);
+  
+  // Queue processor - processes one item at a time
+  useEffect(() => {
+    if (!isProcessingQueue || generating) return;
+    
+    const nextItem = queue.find(item => item.status === 'pending');
+    if (nextItem) {
+      processQueueItem(nextItem);
+    } else {
+      // No more items to process
+      setIsProcessingQueue(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isProcessingQueue, queue, generating]);
+
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -170,17 +604,47 @@ export default function Home() {
     setEstimatedDuration(estimate);
     
     try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          prompt, 
-          model, 
-          size, 
-          seconds: duration,
-          apiKey 
-        }),
-      });
+      let res;
+      
+      // Use FormData if reference file is present
+      if (referenceFile) {
+        // Resize reference image to match selected resolution
+        let finalReferenceFile = referenceFile;
+        try {
+          finalReferenceFile = await resizeImageToResolution(referenceFile, size);
+        } catch (resizeError) {
+          console.error('Failed to resize image:', resizeError);
+          setError('Failed to resize reference image. Please try again.');
+          setGenerating(false);
+          return;
+        }
+        
+        const formData = new FormData();
+        formData.append('prompt', prompt);
+        formData.append('model', model);
+        formData.append('size', size);
+        formData.append('seconds', duration.toString());
+        formData.append('apiKey', apiKey);
+        formData.append('referenceFile', finalReferenceFile);
+        
+        res = await fetch('/api/generate', {
+          method: 'POST',
+          body: formData,
+        });
+      } else {
+        // Use JSON for backward compatibility
+        res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            prompt, 
+            model, 
+            size, 
+            seconds: duration,
+            apiKey 
+          }),
+        });
+      }
       
       const data = await res.json();
       
@@ -218,7 +682,7 @@ export default function Home() {
     }
   }
   
-  async function pollVideoStatus(videoId: string) {
+  async function pollVideoStatus(videoId: string, queueItemId?: string) {
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`/api/video/${videoId}`, {
@@ -235,14 +699,26 @@ export default function Home() {
           setGenerating(false);
           setStartTime(null);
           
+          // Update queue item if it exists
+          if (queueItemId) {
+            setQueue(prev => prev.map(q => q.id === queueItemId ? {
+              ...q,
+              status: data.status === 'completed' ? 'completed' as const : 'failed' as const,
+              completedAt: Date.now(),
+              error: data.status === 'failed' ? 'Video generation failed' : undefined,
+            } : q));
+          }
+          
           if (data.status === 'completed') {
             setError('');
             // Play completion sound
             if (audio) {
               audio.play().catch(err => console.log('Audio play failed:', err));
             }
-            // Automatically download and show video
-            downloadVideo(videoId);
+            // Automatically download and show video (only for non-queue items or first in queue)
+            if (!queueItemId || queue.length === 1) {
+              downloadVideo(videoId);
+            }
           } else {
             setError('Video generation failed');
           }
@@ -250,6 +726,14 @@ export default function Home() {
       } catch {
         clearInterval(interval);
         setGenerating(false);
+        if (queueItemId) {
+          setQueue(prev => prev.map(q => q.id === queueItemId ? {
+            ...q,
+            status: 'failed' as const,
+            completedAt: Date.now(),
+            error: 'Failed to check video status',
+          } : q));
+        }
         setError('Failed to check video status');
       }
     }, 3000);
@@ -257,6 +741,7 @@ export default function Home() {
   
   async function downloadVideo(videoId: string) {
     setDownloading(true);
+    setError(''); // Clear previous errors
     try {
       const res = await fetch(`/api/download/${videoId}`, {
         method: 'POST',
@@ -265,24 +750,76 @@ export default function Home() {
       });
       
       if (!res.ok) {
-        throw new Error('Failed to download video');
+        const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Download failed:', errorData);
+        throw new Error(errorData.error || `Failed to download video (${res.status})`);
       }
       
       const blob = await res.blob();
+      
+      // Check if we got a valid blob
+      if (!blob || blob.size === 0) {
+        throw new Error('Received empty video file');
+      }
+      
       const url = URL.createObjectURL(blob);
       setVideoUrl(url);
+      setVideoStatus({ id: videoId, status: 'completed' });
     } catch (error) {
-      console.error('Download error:', error);
-      setError('Failed to download video for preview');
+      console.error('Download error for video', videoId, ':', error);
+      const message = error instanceof Error ? error.message : 'Failed to download video';
+      setError(`Failed to download video for preview: ${message}`);
     } finally {
       setDownloading(false);
     }
   }
   
   async function loadPastVideo(video: typeof pastVideos[0]) {
+    console.log('Loading past video:', {
+      id: video.id,
+      status: video.status,
+      hasPrompt: !!video.prompt,
+      model: video.model
+    });
     setVideoStatus({ id: video.id, status: video.status });
+    setVideoUrl(null); // Clear previous video
     await downloadVideo(video.id);
   }
+  
+  // Delete video from OpenAI
+  const deleteVideo = useCallback(async (videoId: string) => {
+    if (!confirm('Are you sure you want to delete this video? This cannot be undone.')) {
+      return;
+    }
+    
+    try {
+      const res = await fetch(`/api/video/${videoId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey }),
+      });
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || 'Failed to delete video');
+      }
+      
+      // Remove from past videos list
+      setPastVideos(prev => prev.filter(v => v.id !== videoId));
+      
+      // Clear video player if this video is currently shown
+      if (videoStatus?.id === videoId) {
+        setVideoUrl(null);
+        setVideoStatus(null);
+      }
+      
+      console.log('Video deleted successfully:', videoId);
+    } catch (error) {
+      console.error('Delete error:', error);
+      const message = error instanceof Error ? error.message : 'Failed to delete video';
+      setError(`Failed to delete video: ${message}`);
+    }
+  }, [apiKey, videoStatus]);
   
   const resolution = size === '1280x720' ? '720p' : size === '1920x1080' ? '1080p' : '1792p';
   const estimatedCost = calculateCost(model, resolution, duration);
@@ -355,6 +892,142 @@ export default function Home() {
             </div>
           </div>
         </div>
+        
+        {/* Queue Panel */}
+        {queue.length > 0 && (
+          <div className="mb-8 bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
+            <div className="flex justify-between items-center p-4 border-b border-zinc-800">
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-semibold text-zinc-100">Generation Queue</h2>
+                <span className="text-xs bg-zinc-800 text-zinc-300 px-2 py-1 rounded">
+                  {queue.filter(q => q.status === 'pending').length} pending
+                </span>
+                {queue.filter(q => q.status === 'processing').length > 0 && (
+                  <span className="text-xs bg-blue-950 text-blue-300 px-2 py-1 rounded border border-blue-900">
+                    {queue.filter(q => q.status === 'processing').length} processing
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={clearCompletedQueue}
+                  className="text-xs text-zinc-500 hover:text-zinc-300 underline"
+                >
+                  Clear Completed
+                </button>
+                <button
+                  onClick={() => setShowQueue(!showQueue)}
+                  className="text-xs text-zinc-400 hover:text-zinc-200"
+                >
+                  {showQueue ? 'Hide' : 'Show'}
+                </button>
+              </div>
+            </div>
+            
+            {showQueue && (
+              <div className="max-h-96 overflow-y-auto">
+                {queue.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className={`p-4 border-b border-zinc-800 last:border-b-0 ${
+                      item.status === 'processing' ? 'bg-zinc-950' : ''
+                    }`}
+                  >
+                    <div className="flex items-start gap-4">
+                      {/* Queue Number */}
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-sm font-medium text-zinc-300">
+                        {index + 1}
+                      </div>
+                      
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-zinc-200 mb-1 line-clamp-2">{item.prompt}</p>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                          <span className="font-mono">{item.model}</span>
+                          <span>•</span>
+                          <span>{item.size}</span>
+                          <span>•</span>
+                          <span>{item.duration}s</span>
+                          <span>•</span>
+                          <span className="font-mono">${item.cost.toFixed(4)}</span>
+                          {item.referenceVideoId && (
+                            <>
+                              <span>•</span>
+                              <span className="text-blue-400">🖼️ Reference</span>
+                            </>
+                          )}
+                        </div>
+                        {item.error && (
+                          <p className="text-xs text-red-400 mt-1">Error: {item.error}</p>
+                        )}
+                      </div>
+                      
+                      {/* Status Badge */}
+                      <div className="flex-shrink-0">
+                        {item.status === 'pending' && (
+                          <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-zinc-800 text-zinc-400 border border-zinc-700">
+                            Pending
+                          </span>
+                        )}
+                        {item.status === 'processing' && (
+                          <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-blue-950 text-blue-300 border border-blue-900">
+                            <div className="animate-spin h-3 w-3 border border-blue-400 border-t-transparent rounded-full mr-1.5"></div>
+                            Processing
+                          </span>
+                        )}
+                        {item.status === 'completed' && (
+                          <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-green-950 text-green-300 border border-green-900">
+                            ✓ Completed
+                          </span>
+                        )}
+                        {item.status === 'failed' && (
+                          <span className="inline-flex items-center px-2 py-1 rounded text-xs bg-red-950 text-red-300 border border-red-900">
+                            ✗ Failed
+                          </span>
+                        )}
+                      </div>
+                      
+                      {/* Actions */}
+                      {item.status === 'pending' && (
+                        <div className="flex-shrink-0 flex gap-1">
+                          <button
+                            onClick={() => moveQueueItem(item.id, 'up')}
+                            disabled={index === 0}
+                            className="p-1 text-zinc-500 hover:text-zinc-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Move up"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => moveQueueItem(item.id, 'down')}
+                            disabled={index === queue.length - 1}
+                            className="p-1 text-zinc-500 hover:text-zinc-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Move down"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => removeFromQueue(item.id)}
+                            className="p-1 text-zinc-500 hover:text-red-400"
+                            title="Remove"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         
         {/* Progress Bar - Large at top when generating */}
         {generating && (
@@ -452,16 +1125,23 @@ export default function Home() {
               <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center">
                 <p className="text-sm text-zinc-400">No past videos found. Generate your first video above!</p>
               </div>
+            ) : loadingPastVideos ? (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center">
+                <div className="animate-spin h-6 w-6 border-2 border-zinc-600 border-t-zinc-300 rounded-full mx-auto mb-3"></div>
+                <p className="text-sm text-zinc-400">Refreshing videos...</p>
+              </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
                 {pastVideos.map((video) => (
-                  <button
+                  <div
                     key={video.id}
-                    onClick={() => loadPastVideo(video)}
-                    className="bg-zinc-900 border border-zinc-800 hover:border-zinc-600 rounded-lg overflow-hidden text-left transition-all hover:scale-[1.02] group"
+                    className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden transition-all group"
                   >
                     {/* Video Thumbnail */}
-                    <div className="aspect-video bg-zinc-950 relative overflow-hidden border-b border-zinc-800 group-hover:border-zinc-700">
+                    <button
+                      onClick={() => loadPastVideo(video)}
+                      className="aspect-video bg-zinc-950 relative overflow-hidden border-b border-zinc-800 group-hover:border-zinc-700 w-full"
+                    >
                       {video.thumbnailUrl ? (
                         <Image 
                           src={video.thumbnailUrl} 
@@ -492,12 +1172,12 @@ export default function Home() {
                           <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
                         </svg>
                       </div>
-                    </div>
+                    </button>
                     
                     {/* Video Info */}
-                    <div className="p-2.5 space-y-1">
+                    <div className="p-2.5 space-y-2">
                       {video.prompt && (
-                        <p className="text-xs text-zinc-300 line-clamp-2 leading-snug mb-1">
+                        <p className="text-xs text-zinc-300 line-clamp-2 leading-snug">
                           {video.prompt}
                         </p>
                       )}
@@ -518,8 +1198,37 @@ export default function Home() {
                           day: 'numeric',
                         })}
                       </div>
+                      
+                      {/* Action Buttons */}
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {/* Use Last Frame as Reference Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // eslint-disable-next-line react-hooks/rules-of-hooks
+                            useVideoFrameAsReference(video.id);
+                          }}
+                          disabled={loadingReference}
+                          className="bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-900 text-zinc-300 hover:text-zinc-100 disabled:text-zinc-600 text-[10px] font-medium py-1.5 px-2 rounded transition-colors"
+                          title="Extract last frame as image reference for continuity"
+                        >
+                          {loadingReference ? '...' : '🖼️ Frame'}
+                        </button>
+                        
+                        {/* Delete Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteVideo(video.id);
+                          }}
+                          className="bg-zinc-800 hover:bg-red-900 text-zinc-400 hover:text-red-300 text-[10px] font-medium py-1.5 px-2 rounded transition-colors"
+                          title="Delete this video permanently"
+                        >
+                          🗑️ Delete
+                        </button>
+                      </div>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -580,6 +1289,110 @@ export default function Home() {
                     rows={3}
                     required
                   />
+                </div>
+                
+                {/* Reference Image/Video Upload */}
+                <div>
+                  <label className="block text-sm font-medium mb-2 text-zinc-200">
+                    Reference Image <span className="text-zinc-500 font-normal">(Optional)</span>
+                  </label>
+                  
+                  {!referencePreview ? (
+                    <div
+                      onDrop={handleDrop}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      className={`relative border-2 border-dashed rounded-md p-6 text-center transition-colors ${
+                        isDragging
+                          ? 'border-zinc-500 bg-zinc-900'
+                          : 'border-zinc-800 bg-zinc-950 hover:border-zinc-700'
+                      }`}
+                    >
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/jpg,image/png,image/webp"
+                        onChange={handleFileInputChange}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        disabled={generating}
+                      />
+                      <div className="pointer-events-none">
+                        <svg
+                          className="mx-auto h-10 w-10 text-zinc-600 mb-3"
+                          stroke="currentColor"
+                          fill="none"
+                          viewBox="0 0 48 48"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+                            strokeWidth={2}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                        <p className="text-sm text-zinc-400 mb-1">
+                          <span className="font-medium text-zinc-300">Click to upload</span> or drag and drop
+                        </p>
+                        <p className="text-xs text-zinc-600">
+                          JPEG, PNG, or WebP (max 10MB)
+                        </p>
+                        <p className="text-xs text-zinc-500 mt-1">
+                          Image will be used as the first frame of your video
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="relative bg-zinc-950 border border-zinc-800 rounded-md p-4">
+                      <div className="flex items-start gap-4">
+                        {/* Preview */}
+                        <div className="flex-shrink-0">
+                          <Image
+                            src={referencePreview}
+                            alt="Reference preview"
+                            width={120}
+                            height={120}
+                            className="rounded object-cover"
+                            unoptimized
+                          />
+                        </div>
+                        
+                        {/* File Info */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-zinc-300 font-medium truncate">
+                            {referenceFile?.name}
+                          </p>
+                          <p className="text-xs text-zinc-500 mt-1">
+                            {referenceFile && (referenceFile.size / 1024 / 1024).toFixed(2)} MB
+                          </p>
+                          {referenceVideoId ? (
+                            <p className="text-xs text-blue-400 mt-1">
+                              ✓ Using last frame from video (will auto-resize to {size})
+                            </p>
+                          ) : (
+                            <p className="text-xs text-zinc-600 mt-1">
+                              Will be resized to {size} and used as first frame
+                            </p>
+                          )}
+                        </div>
+                        
+                        {/* Remove Button */}
+                        <button
+                          type="button"
+                          onClick={clearReferenceFile}
+                          className="flex-shrink-0 text-zinc-500 hover:text-zinc-300 transition-colors"
+                          disabled={generating}
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <p className="text-xs text-zinc-500 mt-2">
+                    Upload an image to use as the first frame of your video. Image will be automatically resized to match your selected resolution.
+                  </p>
                 </div>
                 
                 {/* Orientation */}
@@ -671,14 +1484,24 @@ export default function Home() {
                   </div>
                 </div>
                 
-                {/* Submit */}
-                <button
-                  type="submit"
-                  disabled={generating || !prompt || !apiKey}
-                  className="w-full bg-zinc-50 hover:bg-zinc-200 disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed text-zinc-950 font-semibold py-3 px-6 rounded-md transition-colors text-sm"
-                >
-                  {generating ? 'Generating...' : 'Generate Video'}
-                </button>
+                {/* Submit Buttons */}
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={addToQueue}
+                    disabled={!prompt || !apiKey}
+                    className="w-full bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-900 disabled:text-zinc-600 disabled:cursor-not-allowed text-zinc-100 font-semibold py-3 px-6 rounded-md transition-colors text-sm border border-zinc-700"
+                  >
+                    Add to Queue
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={generating || !prompt || !apiKey}
+                    className="w-full bg-zinc-50 hover:bg-zinc-200 disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed text-zinc-950 font-semibold py-3 px-6 rounded-md transition-colors text-sm"
+                  >
+                    {generating ? 'Generating...' : 'Generate Now'}
+                  </button>
+                </div>
               </form>
             </div>
           </div>
@@ -687,8 +1510,20 @@ export default function Home() {
           <div className="space-y-6">
             {/* Error */}
             {error && (
-              <div className="bg-red-950 border border-red-900 rounded-lg p-4 text-red-200 text-sm">
-                {error}
+              <div className="bg-red-950 border border-red-900 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex-1">
+                    <p className="text-red-200 text-sm">{error}</p>
+                  </div>
+                  {error.includes('Failed to download video') && videoStatus?.id && (
+                    <button
+                      onClick={() => downloadVideo(videoStatus.id)}
+                      className="flex-shrink-0 text-xs text-red-300 hover:text-red-100 underline"
+                    >
+                      Retry
+                    </button>
+                  )}
+                </div>
               </div>
             )}
             
@@ -794,7 +1629,27 @@ export default function Home() {
                   <span className="text-zinc-600">•</span>
                   <span>Be specific about subject and action</span>
                 </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-zinc-600">•</span>
+                  <span>Use reference images as the first frame of your video</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-500">🖼️</span>
+                  <span className="text-blue-400">Extract last frame from videos to maintain continuity</span>
+                </li>
               </ul>
+              
+              {referenceVideoId && (
+                <div className="mt-4 pt-4 border-t border-zinc-800">
+                  <p className="text-xs font-semibold text-zinc-200 mb-2">Continuity Tips:</p>
+                  <ul className="space-y-1.5 text-xs text-zinc-500">
+                    <li>• Start your prompt with what happens next</li>
+                    <li>• Example: &quot;The person turns around and walks forward&quot;</li>
+                    <li>• Maintain consistent time of day and lighting</li>
+                    <li>• The last frame becomes your first frame</li>
+                  </ul>
+                </div>
+              )}
             </div>
             
             {/* Video History */}
