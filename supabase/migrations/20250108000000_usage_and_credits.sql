@@ -33,20 +33,24 @@ alter table public.usage_events enable row level security;
 alter table public.credit_ledger enable row level security;
 
 -- RLS Policies for profiles
+drop policy if exists "Users can read their own profile" on public.profiles;
 create policy "Users can read their own profile"
   on public.profiles for select
   using (auth.uid() = id);
 
 -- RLS Policies for usage_events
+drop policy if exists "Users can read their own usage events" on public.usage_events;
 create policy "Users can read their own usage events"
   on public.usage_events for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can insert their own usage events" on public.usage_events;
 create policy "Users can insert their own usage events"
   on public.usage_events for insert
   with check (auth.uid() = user_id);
 
 -- RLS Policies for credit_ledger
+drop policy if exists "Users can read their own credit ledger" on public.credit_ledger;
 create policy "Users can read their own credit ledger"
   on public.credit_ledger for select
   using (auth.uid() = user_id);
@@ -71,6 +75,7 @@ end;
 $$;
 
 -- Optional: Trigger to call the function
+drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
