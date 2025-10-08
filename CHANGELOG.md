@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Content Policy Disclaimers**: Clear warnings about OpenAI's prohibition on using images with identifiable faces as references
+- Amber warning boxes in reference upload section and continuity tips
+- Updated button tooltips with policy reminders
+- Comprehensive policy guidelines in README
+- Main disclaimer updated with content policy notice
 - **Enhanced Error Reporting**: Display detailed error messages from OpenAI API including error codes, types, and specific failure reasons
 - Error details panel in Video Status section shows error code and type
 - Comprehensive console logging for debugging video generation failures

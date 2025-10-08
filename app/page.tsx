@@ -1260,7 +1260,7 @@ export default function Home() {
                           }}
                           disabled={loadingReference}
                           className="bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-900 text-zinc-300 hover:text-zinc-100 disabled:text-zinc-600 text-[10px] font-medium py-1.5 px-2 rounded transition-colors"
-                          title="Extract last frame as image reference for continuity"
+                          title="Extract last frame as image reference for continuity (Do not use if frame shows identifiable faces)"
                         >
                           {loadingReference ? '...' : '🖼️ Frame'}
                         </button>
@@ -1319,6 +1319,11 @@ export default function Home() {
                   We provide no warranties and assume no liability for API usage, costs incurred, 
                   or content generated. By using this tool, you agree to OpenAI&apos;s terms of service 
                   and acceptable use policies. All content generation is subject to OpenAI&apos;s content policy.
+                </p>
+                <p className="text-amber-600 leading-relaxed">
+                  <strong className="text-amber-500">Content Policy:</strong> Reference images containing 
+                  identifiable faces or people are strictly prohibited per OpenAI policy. Using such images 
+                  will result in generation failures and may affect your API access.
                 </p>
               </div>
             </div>
@@ -1443,6 +1448,13 @@ export default function Home() {
                   <p className="text-xs text-zinc-500 mt-2">
                     Upload an image to use as the first frame of your video. Image will be automatically resized to match your selected resolution.
                   </p>
+                  <div className="mt-2 bg-amber-950/50 border border-amber-900/50 rounded-md p-2.5">
+                    <p className="text-xs text-amber-200 font-medium mb-1">⚠️ Content Policy Notice</p>
+                    <p className="text-xs text-amber-300/80 leading-relaxed">
+                      Reference images containing people&apos;s faces are not permitted per OpenAI&apos;s content policy. 
+                      Use only images without identifiable people, or scenes with people where faces are not visible.
+                    </p>
+                  </div>
                 </div>
                 
                 {/* Orientation */}
@@ -1723,6 +1735,11 @@ export default function Home() {
                     <li>• Maintain consistent time of day and lighting</li>
                     <li>• The last frame becomes your first frame</li>
                   </ul>
+                  <div className="mt-3 bg-amber-950/50 border border-amber-900/50 rounded-md p-2">
+                    <p className="text-[10px] text-amber-300/80 leading-relaxed">
+                      ⚠️ Do not use frames showing identifiable faces per OpenAI policy
+                    </p>
+                  </div>
                 </div>
               )}
             </div>

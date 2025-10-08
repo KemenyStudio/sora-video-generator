@@ -142,6 +142,25 @@ Upload reference images to use as the first frame of your video:
 - Your prompt controls the action and camera movement
 - High-quality resizing maintains image quality
 
+### ⚠️ Content Policy Requirements
+**OpenAI strictly prohibits reference images containing:**
+- Identifiable faces or people
+- Images where faces are clearly visible
+- Personal photos of individuals
+
+**Allowed reference images:**
+- Landscapes and environments
+- Objects and products
+- Animals and nature
+- Abstract patterns and textures
+- Architectural elements
+- Scenes with people where faces are not visible or identifiable
+
+**Violation consequences:**
+- Your generation will fail with a content policy error
+- Repeated violations may result in API access restrictions
+- Always review OpenAI's usage policies before uploading references
+
 ---
 
 ## 🎬 Video Continuity & Long-Form Content
@@ -160,6 +179,14 @@ Create longer videos by extracting frames and chaining generations:
 - Converts to JPEG at original video resolution
 - Uses as reference image for next generation
 - Maintains perfect visual continuity
+
+### ⚠️ Important: People in Frames
+**Do not extract frames containing identifiable faces.** OpenAI's content policy prohibits using images of people's faces as references. Only extract and use frames that:
+- Show environments, landscapes, or objects
+- Contain people where faces are not visible (back views, silhouettes, distant shots)
+- Focus on non-human subjects
+
+Frames with visible faces will cause your next generation to fail with a content policy violation error.
 
 ### Continuity Prompting Tips
 - **Start with action**: "The person turns around and smiles"
