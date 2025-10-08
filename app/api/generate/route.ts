@@ -102,44 +102,46 @@ export async function POST(request: NextRequest) {
     // Generate video
     const video = await openai.videos.create(videoParams as Parameters<typeof openai.videos.create>[0]);
     
-    // Log usage to database if user is signed in
-    try {
-      const supabase = await createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (user) {
-        // Determine resolution from size
-        const resolution = size === '1280x720' || size === '720x1280' 
-          ? '720p' 
-          : (size === '1920x1080' || size === '1080x1920' ? '1080p' : '1792p');
+    // Log usage to database if user is signed in (only if Supabase is configured)
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      try {
+        const supabase = await createClient();
+        const { data: { user } } = await supabase.auth.getUser();
         
-        // Validate duration (must be 4, 8, or 12)
-        const validSeconds = Number(seconds);
-        const duration = [4, 8, 12].includes(validSeconds) 
-          ? (validSeconds as 4 | 8 | 12)
-          : 8; // Default to 8 if invalid
-        
-        // Calculate cost
-        const cost = calculateCost(
-          model as 'sora-2' | 'sora-2-pro',
-          resolution as '720p' | '1080p' | '1792p',
-          duration
-        );
-        
-        // Insert usage event (never store API keys)
-        await supabase.from('usage_events').insert({
-          user_id: user.id,
-          video_id: video.id,
-          model,
-          resolution,
-          seconds: validSeconds,
-          cost_usd: cost,
-          prompt,
-        });
+        if (user) {
+          // Determine resolution from size
+          const resolution = size === '1280x720' || size === '720x1280' 
+            ? '720p' 
+            : (size === '1920x1080' || size === '1080x1920' ? '1080p' : '1792p');
+          
+          // Validate duration (must be 4, 8, or 12)
+          const validSeconds = Number(seconds);
+          const duration = [4, 8, 12].includes(validSeconds) 
+            ? (validSeconds as 4 | 8 | 12)
+            : 8; // Default to 8 if invalid
+          
+          // Calculate cost
+          const cost = calculateCost(
+            model as 'sora-2' | 'sora-2-pro',
+            resolution as '720p' | '1080p' | '1792p',
+            duration
+          );
+          
+          // Insert usage event (never store API keys)
+          await supabase.from('usage_events').insert({
+            user_id: user.id,
+            video_id: video.id,
+            model,
+            resolution,
+            seconds: validSeconds,
+            cost_usd: cost,
+            prompt,
+          });
+        }
+      } catch (dbError) {
+        // Log error but don't fail the request
+        console.error('Failed to log usage to database:', dbError);
       }
-    } catch (dbError) {
-      // Log error but don't fail the request
-      console.error('Failed to log usage to database:', dbError);
     }
     
     return NextResponse.json({
