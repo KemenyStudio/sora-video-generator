@@ -128,12 +128,10 @@ export default function Home() {
       });
       
       if (!res.ok) {
-        let errorMessage = `Failed to fetch videos (${res.status})`;
         try {
           const errorData = await res.json();
-          errorMessage = errorData.error || errorMessage;
           console.error('Failed to fetch videos:', errorData);
-        } catch (parseError) {
+        } catch {
           // API returned non-JSON (probably HTML error page)
           const text = await res.text().catch(() => 'Unknown error');
           console.error('Failed to fetch videos (non-JSON response):', {
