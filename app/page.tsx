@@ -130,14 +130,10 @@ export default function Home() {
       if (!res.ok) {
         try {
           const errorData = await res.json();
-          console.error('Failed to fetch videos:', errorData);
+          console.warn('Unable to fetch past videos:', errorData.error || `HTTP ${res.status}`);
         } catch {
-          // API returned non-JSON (probably HTML error page)
-          const text = await res.text().catch(() => 'Unknown error');
-          console.error('Failed to fetch videos (non-JSON response):', {
-            status: res.status,
-            response: text.substring(0, 200)
-          });
+          // API returned non-JSON (probably HTML error page) - log as warning, not error
+          console.warn('Unable to fetch past videos (server error):', res.status);
         }
         // Silently fail - don't show error to user for optional feature
         setLoadingPastVideos(false);
