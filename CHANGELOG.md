@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Supabase Authentication**: Optional Google OAuth sign-in for enhanced features
+  - Google-only authentication using Supabase SSR (`@supabase/ssr`)
+  - Cookie-based session management with server-side auth validation
+  - Optional login - users can still use the app without signing in with their own API key
+  - Minimal auth UI: Sign in button in header, dedicated login page
+  - Server component `HeaderAuth` displays user email and sign out button
+  - Auth callback route at `/auth/callback` for OAuth flow
+  - Server actions for secure sign out with path revalidation
+- **Usage History Database**: Track video generation history in Supabase for signed-in users
+  - `usage_events` table logs all video generations with full metadata
+  - Stores video ID, model, resolution, duration, cost, and prompt
+  - Never stores or logs user OpenAI API keys (privacy-first)
+  - Row Level Security (RLS) policies ensure users only see their own data
+  - Automatic usage logging in `/api/generate` route when user is authenticated
+  - Failed requests don't block video generation (graceful fallback)
+- **Credit Ledger Foundation**: Database table for future payment gateway integration
+  - `credit_ledger` table ready for tracking credit purchases and usage
+  - RLS policies for secure per-user credit balance tracking
+  - Supports delta tracking, transaction reasons, and reference IDs
+- **Database Schema**: Complete PostgreSQL schema with indexes and triggers
+  - `profiles` table mirrors `auth.users` for extended user data
+  - Automatic profile creation on user signup via database trigger
+  - Indexed queries for optimal performance on user_id and timestamps
+  - Migration file stored in `/supabase/migrations/` per project conventions
 - **Vercel Analytics Integration**: Track user interactions and app usage patterns
 - Event tracking for all major actions: generation, queue management, reference uploads, deletions
 - Track video generation metrics: model, size, duration, cost (prompts NOT tracked for privacy)
