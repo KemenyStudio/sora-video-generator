@@ -59,13 +59,16 @@ create index if not exists credit_ledger_created_at_idx on public.credit_ledger(
 
 -- Optional: Function to automatically create a profile when a user signs up
 create or replace function public.handle_new_user()
-returns trigger as $$
+returns trigger
+security definer set search_path = ''
+language plpgsql
+as $$
 begin
   insert into public.profiles (id)
   values (new.id);
   return new;
 end;
-$$ language plpgsql security definer;
+$$;
 
 -- Optional: Trigger to call the function
 create trigger on_auth_user_created
