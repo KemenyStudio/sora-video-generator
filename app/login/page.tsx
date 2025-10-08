@@ -30,23 +30,34 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-50 flex items-center justify-center p-8">
-      <div className="max-w-md w-full">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8">
-          <h1 className="text-2xl font-bold mb-2 text-white">Sign In</h1>
-          <p className="text-zinc-400 mb-8 text-sm">
+    <main className="fixed inset-0 bg-zinc-950 text-zinc-50 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        {/* Logo/Brand */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-white mb-2">
+            Sora Video Generator
+          </h1>
+          <p className="text-zinc-500 text-sm">
+            Create AI videos with OpenAI&apos;s Sora API
+          </p>
+        </div>
+
+        {/* Sign In Card */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 shadow-2xl">
+          <h2 className="text-xl font-semibold mb-2 text-white">Welcome</h2>
+          <p className="text-zinc-400 mb-6 text-sm leading-relaxed">
             Sign in to save your video history, track usage, and unlock premium features.
           </p>
           
           <button
             onClick={handleSignIn}
             disabled={isLoading}
-            className="w-full bg-white hover:bg-zinc-100 disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed text-zinc-950 font-semibold py-3 px-6 rounded-md transition-colors flex items-center justify-center gap-3"
+            className="w-full bg-white hover:bg-zinc-100 disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed text-zinc-950 font-semibold py-3.5 px-6 rounded-lg transition-all flex items-center justify-center gap-3 shadow-lg hover:shadow-xl"
           >
             {isLoading ? (
               <>
                 <div className="animate-spin h-5 w-5 border-2 border-zinc-600 border-t-zinc-300 rounded-full"></div>
-                Redirecting...
+                <span>Redirecting...</span>
               </>
             ) : (
               <>
@@ -68,23 +79,28 @@ export default function LoginPage() {
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                   />
                 </svg>
-                Continue with Google
+                <span>Continue with Google</span>
               </>
             )}
           </button>
 
           <div className="mt-6 pt-6 border-t border-zinc-800">
-            <p className="text-xs text-zinc-500 text-center">
-              Optional: You can still use the app without signing in by providing your own OpenAI API key.
+            <p className="text-xs text-zinc-500 text-center mb-3 leading-relaxed">
+              You can still use the app without signing in by providing your own OpenAI API key.
             </p>
             <button
               onClick={() => router.push('/')}
-              className="w-full mt-3 text-sm text-zinc-400 hover:text-zinc-300 underline"
+              className="w-full text-sm text-zinc-400 hover:text-zinc-200 py-2 rounded-lg hover:bg-zinc-800/50 transition-all"
             >
-              Continue without signing in
+              Continue without signing in →
             </button>
           </div>
         </div>
+
+        {/* Footer */}
+        <p className="text-center text-xs text-zinc-600 mt-6">
+          By signing in, you agree to our terms of service and privacy policy.
+        </p>
       </div>
     </main>
   );
