@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Vercel Analytics Integration**: Track user interactions and app usage patterns
+- Event tracking for all major actions: generation, queue management, reference uploads, deletions
+- Track video generation metrics: model, size, duration, cost (prompts NOT tracked for privacy)
+- Track UI interactions: orientation changes, model selection, duration selection
+- Track queue actions: add, remove, reorder, clear
+- Track reference features: upload, clear, frame extraction
+- Track video management: delete, download, load past video
+- API key entry tracking (first time only)
+- Spending counter reset tracking
 - **Content Policy Disclaimers**: Clear warnings about OpenAI's prohibition on using images with identifiable faces as references
 - Amber warning boxes in reference upload section and continuity tips
 - Updated button tooltips with policy reminders

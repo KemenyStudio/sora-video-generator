@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { calculateCost, VALID_DURATIONS, type ModelType, type Duration } from '@/lib/pricing';
+import { track } from '@vercel/analytics';
 
 // Queue item type
 interface QueueItem {
@@ -243,6 +244,11 @@ export default function Home() {
   useEffect(() => {
     if (apiKey && apiKey.startsWith('sk-')) {
       fetchPastVideos();
+      // Track API key entry (first time)
+      if (!localStorage.getItem('analytics_api_key_set')) {
+        track('API Key Entered');
+        localStorage.setItem('analytics_api_key_set', 'true');
+      }
     }
   }, [apiKey, fetchPastVideos]);
   
@@ -285,6 +291,12 @@ export default function Home() {
     setError('');
     setReferenceFile(file);
     
+    // Track reference image upload
+    track('Reference Image Uploaded', {
+      fileType: file.type,
+      fileSizeMB: (file.size / 1024 / 1024).toFixed(2),
+    });
+    
     // Create preview
     const reader = new FileReader();
     reader.onloadend = () => {
@@ -324,6 +336,9 @@ export default function Home() {
     setReferencePreview(null);
     setReferenceVideoId(null);
     setError('');
+    
+    // Track reference removal
+    track('Reference Image Cleared');
   };
 
   // Extract last frame from video as image reference
@@ -394,6 +409,11 @@ export default function Home() {
       // Scroll to form
       document.querySelector('form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       
+      // Track frame extraction
+      track('Frame Extracted for Reference', {
+        videoId: videoId.substring(0, 20),
+      });
+      
     } catch (error) {
       console.error('Error extracting video frame:', error);
       setError('Failed to extract frame from video. Please try again.');
@@ -425,6 +445,15 @@ export default function Home() {
     setQueue(prev => [...prev, queueItem]);
     setShowQueue(true); // Auto-show queue when adding items
     
+    // Track queue addition
+    track('Video Added to Queue', {
+      model,
+      size,
+      duration,
+      hasReference: !!referenceFile,
+      cost: queueItem.cost,
+    });
+    
     // Clear form
     setPrompt('');
     clearReferenceFile();
@@ -437,11 +466,13 @@ export default function Home() {
   
   // Remove item from queue
   const removeFromQueue = useCallback((id: string) => {
+    track('Queue Item Removed');
     setQueue(prev => prev.filter(item => item.id !== id));
   }, []);
   
   // Move item in queue
   const moveQueueItem = useCallback((id: string, direction: 'up' | 'down') => {
+    track('Queue Item Reordered', { direction });
     setQueue(prev => {
       const index = prev.findIndex(item => item.id === id);
       if (index === -1) return prev;
@@ -457,8 +488,10 @@ export default function Home() {
   
   // Clear completed items from queue
   const clearCompletedQueue = useCallback(() => {
+    const clearedCount = queue.filter(item => item.status === 'completed' || item.status === 'failed').length;
+    track('Queue Cleared', { itemsCleared: clearedCount });
     setQueue(prev => prev.filter(item => item.status !== 'completed' && item.status !== 'failed'));
-  }, []);
+  }, [queue]);
 
   // Resize image to match target resolution
   const resizeImageToResolution = async (file: File, targetSize: string): Promise<File> => {
@@ -694,6 +727,15 @@ export default function Home() {
       setVideoHistory(newHistory);
       localStorage.setItem('video_history', JSON.stringify(newHistory));
       
+      // Track video generation (immediate, not queue)
+      track('Video Generated (Immediate)', {
+        model,
+        size,
+        duration,
+        hasReference: !!referenceFile,
+        cost: estimatedCost,
+      });
+      
       // Poll for video status
       pollVideoStatus(data.videoId);
     } catch (error) {
@@ -755,6 +797,11 @@ export default function Home() {
           
           if (data.status === 'completed') {
             setError('');
+            // Track successful video completion
+            track('Video Generation Completed', {
+              videoId: videoId.substring(0, 20),
+              isQueueItem: !!queueItemId,
+            });
             // Play completion sound
             if (audio) {
               audio.play().catch(err => console.log('Audio play failed:', err));
@@ -764,6 +811,11 @@ export default function Home() {
               downloadVideo(videoId);
             }
           } else {
+            // Track failed generation
+            track('Video Generation Failed', {
+              videoId: videoId.substring(0, 20),
+              errorCode: data.error?.code || 'unknown',
+            });
             setError(errorMessage);
           }
         }
@@ -809,6 +861,11 @@ export default function Home() {
       const url = URL.createObjectURL(blob);
       setVideoUrl(url);
       setVideoStatus({ id: videoId, status: 'completed' });
+      
+      // Track video download
+      track('Video Downloaded for Preview', {
+        videoId: videoId.substring(0, 20),
+      });
     } catch (error) {
       console.error('Download error for video', videoId, ':', error);
       const message = error instanceof Error ? error.message : 'Failed to download video';
@@ -825,6 +882,13 @@ export default function Home() {
       hasPrompt: !!video.prompt,
       model: video.model
     });
+    
+    // Track past video load
+    track('Past Video Loaded', {
+      videoId: video.id.substring(0, 20),
+      model: video.model,
+    });
+    
     setVideoStatus({ id: video.id, status: video.status });
     setVideoUrl(null); // Clear previous video
     await downloadVideo(video.id);
@@ -856,6 +920,11 @@ export default function Home() {
         setVideoUrl(null);
         setVideoStatus(null);
       }
+      
+      // Track video deletion
+      track('Video Deleted', {
+        videoId: videoId.substring(0, 20),
+      });
       
       console.log('Video deleted successfully:', videoId);
     } catch (error) {
@@ -922,6 +991,10 @@ export default function Home() {
                 <button
                   onClick={() => {
                     if (confirm('Reset spending counter?')) {
+                      track('Spending Counter Reset', { 
+                        previousTotal: totalSpent,
+                        videoCount: videoHistory.length,
+                      });
                       setTotalSpent(0);
                       setVideoHistory([]);
                       localStorage.removeItem('total_spent');
@@ -1152,7 +1225,10 @@ export default function Home() {
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-zinc-100">Past Generations</h2>
               <button
-                onClick={fetchPastVideos}
+                onClick={() => {
+                  track('Past Videos Refreshed');
+                  fetchPastVideos();
+                }}
                 disabled={loadingPastVideos}
                 className="text-sm text-zinc-400 hover:text-zinc-300 underline disabled:opacity-50"
               >
@@ -1457,7 +1533,10 @@ export default function Home() {
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       type="button"
-                      onClick={() => setOrientation('horizontal')}
+                      onClick={() => {
+                        track('Orientation Changed', { orientation: 'horizontal' });
+                        setOrientation('horizontal');
+                      }}
                       className={`flex flex-col items-center justify-center py-4 px-3 rounded-md border transition-all ${
                         orientation === 'horizontal'
                           ? 'bg-zinc-50 text-zinc-950 border-zinc-50'
@@ -1473,7 +1552,10 @@ export default function Home() {
                     
                     <button
                       type="button"
-                      onClick={() => setOrientation('vertical')}
+                      onClick={() => {
+                        track('Orientation Changed', { orientation: 'vertical' });
+                        setOrientation('vertical');
+                      }}
                       className={`flex flex-col items-center justify-center py-4 px-3 rounded-md border transition-all ${
                         orientation === 'vertical'
                           ? 'bg-zinc-50 text-zinc-950 border-zinc-50'
@@ -1509,7 +1591,11 @@ export default function Home() {
                     <label className="block text-sm font-medium mb-2 text-zinc-200">Model</label>
                     <select
                       value={model}
-                      onChange={(e) => setModel(e.target.value as ModelType)}
+                      onChange={(e) => {
+                        const newModel = e.target.value as ModelType;
+                        track('Model Selected', { model: newModel });
+                        setModel(newModel);
+                      }}
                       className="w-full bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-700 text-sm"
                     >
                       <option value="sora-2">Sora 2 (Fast)</option>
@@ -1522,7 +1608,11 @@ export default function Home() {
                     <label className="block text-sm font-medium mb-2 text-zinc-200">Duration</label>
                     <select
                       value={duration}
-                      onChange={(e) => setDuration(Number(e.target.value) as Duration)}
+                      onChange={(e) => {
+                        const newDuration = Number(e.target.value) as Duration;
+                        track('Duration Selected', { duration: newDuration });
+                        setDuration(newDuration);
+                      }}
                       className="w-full bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-700 text-sm"
                     >
                       {VALID_DURATIONS.map(d => (
