@@ -98,9 +98,18 @@ export default function LoginPage() {
         </div>
 
         {/* Footer */}
-        <p className="text-center text-xs text-zinc-600 mt-6">
-          By signing in, you agree to our terms of service and privacy policy.
-        </p>
+        <div className="text-center mt-6 space-y-2">
+          <p className="text-xs text-zinc-600">
+            By signing in, you agree to our{' '}
+            <a href="/terms" className="text-zinc-500 hover:text-zinc-400 underline">
+              terms of service
+            </a>
+            {' '}and privacy policy.
+          </p>
+          <p className="text-xs text-zinc-700">
+            Secure authentication powered by Supabase
+          </p>
+        </div>
       </div>
     </main>
   );
